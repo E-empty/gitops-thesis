@@ -126,7 +126,7 @@ trap 'cleanup_trigger 130' INT
 trap 'cleanup_trigger 143' TERM
 
 cpu_to_millicores() {
-  awk -v value="$1" 'BEGIN {
+  LC_ALL=C awk -v value="$1" 'BEGIN {
     if (value ~ /n$/) { sub(/n$/, "", value); printf "%.6f", value/1000000 }
     else if (value ~ /u$/) { sub(/u$/, "", value); printf "%.6f", value/1000 }
     else if (value ~ /m$/) { sub(/m$/, "", value); printf "%.6f", value }
@@ -135,7 +135,7 @@ cpu_to_millicores() {
 }
 
 memory_to_mib() {
-  awk -v value="$1" 'BEGIN {
+  LC_ALL=C awk -v value="$1" 'BEGIN {
     if (value ~ /Ki$/) { sub(/Ki$/, "", value); printf "%.6f", value/1024 }
     else if (value ~ /Mi$/) { sub(/Mi$/, "", value); printf "%.6f", value }
     else if (value ~ /Gi$/) { sub(/Gi$/, "", value); printf "%.6f", value*1024 }
@@ -148,7 +148,39 @@ memory_to_mib() {
   }'
 }
 
+controller_pod_names() {
+  kubectl -n "${CONTROLLER_NAMESPACE}" get pods \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+}
+
+metrics_include_pod() {
+  local metrics="$1"
+  local expected_pod="$2"
+  LC_ALL=C awk -v pod="${expected_pod}" \
+    '$1 == pod { found = 1 } END { exit(found ? 0 : 1) }' <<<"${metrics}"
+}
+
+all_controller_metrics_available() {
+  local pods metrics pod
+  pods="$(controller_pod_names 2>>"${CURRENT_LOG}")" || return 1
+  [[ -n "${pods}" ]] || return 1
+  metrics="$(kubectl top pods -n "${CONTROLLER_NAMESPACE}" --no-headers \
+    2>>"${CURRENT_LOG}")" || return 1
+  [[ -n "${metrics}" ]] || return 1
+  while IFS= read -r pod; do
+    [[ -n "${pod}" ]] || continue
+    metrics_include_pod "${metrics}" "${pod}" || return 1
+  done <<<"${pods}"
+}
+
 snapshot_controller_resources "before"
+kubectl -n "${CONTROLLER_NAMESPACE}" wait pod --all \
+  --for=condition=Ready --timeout="${TIMEOUT_SECONDS}s" >>"${CURRENT_LOG}" 2>&1 \
+  || die "Controller Pods did not become Ready before resource sampling"
+wait_until "Metrics Server reports every controller Pod" \
+  all_controller_metrics_available \
+  || die "Metrics Server did not report every controller Pod before sampling"
+baseline_controller_pod_count="$(controller_pod_names | LC_ALL=C awk 'NF { count++ } END { print count + 0 }')"
 log "Collecting ${ITERATIONS} ${PHASE} samples from namespace ${CONTROLLER_NAMESPACE}"
 if [[ -n "${TRIGGER_COMMAND}" ]]; then
   log "Starting phase trigger: ${TRIGGER_COMMAND}"
@@ -157,14 +189,29 @@ if [[ -n "${TRIGGER_COMMAND}" ]]; then
 fi
 for ((iteration=1; iteration<=ITERATIONS; iteration++)); do
   timestamp="$(now_iso)"
+  controller_pods="$(controller_pod_names 2>>"${CURRENT_LOG}" || true)"
+  controller_pod_count="$(LC_ALL=C awk 'NF { count++ } END { print count + 0 }' <<<"${controller_pods}")"
   metrics="$(kubectl top pods -n "${CONTROLLER_NAMESPACE}" --no-headers 2>>"${CURRENT_LOG}" || true)"
-  if [[ -z "${metrics}" ]]; then
+  sample_complete=true
+  if [[ -z "${metrics}" || -z "${controller_pods}" ||
+        "${controller_pod_count}" -ne "${baseline_controller_pod_count}" ]]; then
+    sample_complete=false
+  fi
+  while IFS= read -r pod; do
+    [[ -n "${pod}" ]] || continue
+    if ! metrics_include_pod "${metrics}" "${pod}"; then
+      sample_complete=false
+      log "Sample ${iteration}: metrics unavailable for Pod ${pod}"
+    fi
+  done <<<"${controller_pods}"
+  if [[ "${sample_complete}" == false ]]; then
     printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
       "$(csv_escape "${TOOL}")" "$(csv_escape "${PHASE}")" "${iteration}" \
       "$(csv_escape "${timestamp}")" "$(csv_escape "${CONTROLLER_NAMESPACE}")" \
       '""' '""' '""' '""' '""' '"metrics_unavailable"' >>"${csv_file}"
-    log "Sample ${iteration}: metrics unavailable"
-  else
+    log "Sample ${iteration}: incomplete controller metrics"
+  fi
+  if [[ -n "${metrics}" ]]; then
     while read -r pod cpu memory _rest; do
       [[ -n "${pod}" ]] || continue
       cpu_m="$(cpu_to_millicores "${cpu}")"

@@ -119,7 +119,8 @@ clock_sample() {
 elapsed_seconds() {
   local start_ms="$1"
   local end_ms="$2"
-  awk -v start="${start_ms}" -v end="${end_ms}" 'BEGIN { printf "%.3f", (end-start)/1000 }'
+  LC_ALL=C awk -v start="${start_ms}" -v end="${end_ms}" \
+    'BEGIN { printf "%.3f", (end-start)/1000 }'
 }
 
 is_positive_integer() {
