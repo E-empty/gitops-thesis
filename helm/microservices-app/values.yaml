@@ -1,0 +1,165 @@
+# Registry ownership is intentionally left as a placeholder. Override all three
+# repositories (and normally tags) before installing the chart.
+nameOverride: ""
+fullnameOverride: ""
+
+global:
+  # When both values are set, image repositories are derived as
+  # <imageRegistry>/<imageOwner>/<service.name>. Per-service repositories are
+  # used otherwise.
+  imageRegistry: ""
+  imageOwner: ""
+
+imagePullSecrets: []
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+terminationGracePeriodSeconds: 30
+
+services:
+  gateway:
+    enabled: true
+    name: gateway-service
+    replicas: 2
+    image:
+      repository: "ghcr.io/<YOUR_GITHUB_USERNAME>/gateway-service"
+      tag: "1.0.0"
+      pullPolicy: IfNotPresent
+    containerPort: 8000
+    service:
+      type: ClusterIP
+      port: 80
+      annotations: {}
+    env:
+      APP_VERSION: "1.0.0"
+      APP_FAILURE_MODE: "none"
+      EXPERIMENT_CONFIG: "baseline"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 128Mi
+    livenessProbe:
+      enabled: true
+      path: /health
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      successThreshold: 1
+      failureThreshold: 3
+    readinessProbe:
+      enabled: true
+      path: /ready
+      initialDelaySeconds: 2
+      periodSeconds: 5
+      timeoutSeconds: 2
+      successThreshold: 1
+      failureThreshold: 3
+
+  users:
+    enabled: true
+    name: users-service
+    replicas: 2
+    image:
+      repository: "ghcr.io/<YOUR_GITHUB_USERNAME>/users-service"
+      tag: "1.0.0"
+      pullPolicy: IfNotPresent
+    containerPort: 8000
+    service:
+      type: ClusterIP
+      port: 80
+      annotations: {}
+    env:
+      APP_VERSION: "1.0.0"
+      APP_FAILURE_MODE: "none"
+      EXPERIMENT_CONFIG: "baseline"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 128Mi
+    livenessProbe:
+      enabled: true
+      path: /health
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      successThreshold: 1
+      failureThreshold: 3
+    readinessProbe:
+      enabled: true
+      path: /ready
+      initialDelaySeconds: 2
+      periodSeconds: 5
+      timeoutSeconds: 2
+      successThreshold: 1
+      failureThreshold: 3
+
+  orders:
+    enabled: true
+    name: orders-service
+    replicas: 2
+    image:
+      repository: "ghcr.io/<YOUR_GITHUB_USERNAME>/orders-service"
+      tag: "1.0.0"
+      pullPolicy: IfNotPresent
+    containerPort: 8000
+    service:
+      type: ClusterIP
+      port: 80
+      annotations: {}
+    env:
+      APP_VERSION: "1.0.0"
+      APP_FAILURE_MODE: "none"
+      EXPERIMENT_CONFIG: "baseline"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 128Mi
+    livenessProbe:
+      enabled: true
+      path: /health
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      successThreshold: 1
+      failureThreshold: 3
+    readinessProbe:
+      enabled: true
+      path: /ready
+      initialDelaySeconds: 2
+      periodSeconds: 5
+      timeoutSeconds: 2
+      successThreshold: 1
+      failureThreshold: 3
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: microservices.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []

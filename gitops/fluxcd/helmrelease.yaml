@@ -1,0 +1,33 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: microservices-app
+  namespace: flux-system
+spec:
+  interval: 1m0s
+  releaseName: microservices-app
+  targetNamespace: test-fluxcd
+  timeout: 5m0s
+  chart:
+    spec:
+      chart: ./helm/microservices-app
+      interval: 1m0s
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: microservices-app
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    # The experiment runner, not Helm remediation, decides when to roll back a
+    # deliberately unready release. This prevents measuring an implicit Helm
+    # rollback instead of the required Git revert.
+    disableWait: true
+    cleanupOnFail: false
+    remediation:
+      retries: 0
+  driftDetection:
+    mode: enabled

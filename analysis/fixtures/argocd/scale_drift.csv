@@ -1,0 +1,4 @@
+tool,test,iteration,start_time,detection_time,recovery_time,total_seconds,status
+argocd,scale_drift,1,2026-01-01T00:00:00Z,2026-01-01T00:00:04Z,2026-01-01T00:00:10Z,10,success
+argocd,scale_drift,2,2026-01-01T00:01:00Z,2026-01-01T00:01:06Z,2026-01-01T00:01:30Z,30,success
+argocd,scale_drift,3,2026-01-01T00:02:00Z,,,300,recovery_timeout

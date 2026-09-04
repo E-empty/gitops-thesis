@@ -1,0 +1,39 @@
+{{- if .Values.ingress.enabled }}
+{{- $gateway := required "services.gateway is required when ingress is enabled" .Values.services.gateway }}
+{{- if not $gateway.enabled }}
+{{- fail "services.gateway.enabled must be true when ingress is enabled" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "microservices-app.serviceFullname" (dict "root" . "key" "gateway" "service" $gateway) }}
+  labels:
+    {{- include "microservices-app.serviceLabels" (dict "root" . "key" "gateway" "service" $gateway) | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path | quote }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "microservices-app.serviceFullname" (dict "root" $ "key" "gateway" "service" $gateway) }}
+                port:
+                  number: {{ $gateway.service.port }}
+          {{- end }}
+    {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  # Match the one-minute Flux GitRepository/HelmRelease intervals and remove
+  # random jitter so repeated measurements have a declared polling boundary.
+  timeout.reconciliation: 60s
+  timeout.reconciliation.jitter: 0s

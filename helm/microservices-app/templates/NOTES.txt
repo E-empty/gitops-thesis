@@ -1,0 +1,13 @@
+{{- $gateway := index .Values.services "gateway" -}}
+{{- if and $gateway.enabled .Values.ingress.enabled }}
+Gateway ingress routes:
+{{- range .Values.ingress.hosts }}
+{{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}{{ .path }}
+{{- end }}
+{{- end }}
+{{- else if $gateway.enabled }}
+To test the gateway locally:
+  kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "microservices-app.serviceFullname" (dict "root" . "key" "gateway" "service" $gateway) }} 18080:{{ $gateway.service.port }}
+  curl http://127.0.0.1:18080/health
+{{- end }}

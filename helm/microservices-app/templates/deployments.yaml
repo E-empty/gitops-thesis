@@ -1,0 +1,88 @@
+{{- range $key, $service := .Values.services }}
+{{- if $service.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "microservices-app.serviceFullname" (dict "root" $ "key" $key "service" $service) }}
+  labels:
+    {{- include "microservices-app.serviceLabels" (dict "root" $ "key" $key "service" $service) | nindent 4 }}
+spec:
+  replicas: {{ $service.replicas }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "microservices-app.selectorLabels" (dict "root" $ "key" $key "service" $service) | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include "microservices-app.configData" (dict "root" $ "key" $key "service" $service) | sha256sum }}
+        {{- with $.Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "microservices-app.selectorLabels" (dict "root" $ "key" $key "service" $service) | nindent 8 }}
+        {{- with $.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ $.Values.terminationGracePeriodSeconds }}
+      containers:
+        - name: {{ $service.name }}
+          image: {{ include "microservices-app.image" (dict "root" $ "key" $key "service" $service) | quote }}
+          imagePullPolicy: {{ $service.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ $service.containerPort }}
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: {{ include "microservices-app.serviceFullname" (dict "root" $ "key" $key "service" $service) }}
+          {{- if $service.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ $service.livenessProbe.path | quote }}
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: {{ $service.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $service.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $service.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ $service.livenessProbe.successThreshold }}
+            failureThreshold: {{ $service.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $service.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ $service.readinessProbe.path | quote }}
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: {{ $service.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $service.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $service.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ $service.readinessProbe.successThreshold }}
+            failureThreshold: {{ $service.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml $service.resources | nindent 12 }}
+---
+{{- end }}
+{{- end }}

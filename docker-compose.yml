@@ -1,0 +1,69 @@
+services:
+  gateway-service:
+    build:
+      context: ./app
+      dockerfile: gateway-service/Dockerfile
+    environment:
+      APP_FAILURE_MODE: "${GATEWAY_FAILURE_MODE:-none}"
+      APP_VERSION: "${APP_VERSION:-1.0.0}"
+    init: true
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  users-service:
+    build:
+      context: ./app
+      dockerfile: users-service/Dockerfile
+    environment:
+      APP_FAILURE_MODE: "${USERS_FAILURE_MODE:-none}"
+      APP_VERSION: "${APP_VERSION:-1.0.0}"
+    init: true
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  orders-service:
+    build:
+      context: ./app
+      dockerfile: orders-service/Dockerfile
+    environment:
+      APP_FAILURE_MODE: "${ORDERS_FAILURE_MODE:-none}"
+      APP_VERSION: "${APP_VERSION:-1.0.0}"
+    init: true
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.deps/
+.tools/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.kubeconfig
+kubeconfig*
+*.pem
+*.key
+*.p12
+*.token
+
+# Generated experiment and analysis data
+results/argocd/
+results/fluxcd/
+results/logs/
+analysis/output/
+analysis/tmp*/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

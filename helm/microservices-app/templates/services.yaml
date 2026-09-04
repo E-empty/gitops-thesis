@@ -1,0 +1,25 @@
+{{- range $key, $service := .Values.services }}
+{{- if $service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "microservices-app.serviceFullname" (dict "root" $ "key" $key "service" $service) }}
+  labels:
+    {{- include "microservices-app.serviceLabels" (dict "root" $ "key" $key "service" $service) | nindent 4 }}
+  {{- with $service.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $service.service.type }}
+  ports:
+    - name: http
+      port: {{ $service.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "microservices-app.selectorLabels" (dict "root" $ "key" $key "service" $service) | nindent 4 }}
+---
+{{- end }}
+{{- end }}
+
