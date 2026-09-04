@@ -3,6 +3,9 @@ kind: ConfigMap
 metadata:
   name: argocd-cm
   namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
 data:
   # Match the one-minute Flux GitRepository/HelmRelease intervals and remove
   # random jitter so repeated measurements have a declared polling boundary.

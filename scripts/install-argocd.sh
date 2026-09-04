@@ -173,6 +173,7 @@ kubectl --context "${kube_context}" rollout status \
   || fail "reconciliation configuration not found: ${reconciliation_manifest}"
 printf '%s\n' 'Configuring a 60s Git reconciliation interval with no jitter...'
 kubectl --context "${kube_context}" apply --server-side --force-conflicts \
+  --field-manager=gitops-thesis-argocd-config \
   -f "${reconciliation_manifest}"
 kubectl --context "${kube_context}" rollout restart \
   statefulset/argocd-application-controller \
