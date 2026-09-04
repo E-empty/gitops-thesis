@@ -165,7 +165,8 @@ kubectl --context "${kube_context}" apply --server-side --force-conflicts \
 kubectl --context "${kube_context}" wait deployment --all \
   --namespace "${ARGOCD_NAMESPACE}" --for=condition=Available \
   --timeout="${wait_timeout}"
-kubectl --context "${kube_context}" rollout status statefulset --all \
+kubectl --context "${kube_context}" rollout status \
+  statefulset/argocd-application-controller \
   --namespace "${ARGOCD_NAMESPACE}" --timeout="${wait_timeout}"
 
 [[ -f "${reconciliation_manifest}" ]] \
