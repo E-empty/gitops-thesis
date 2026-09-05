@@ -37,6 +37,7 @@ baseline_failure_mode="$(values_get env.APP_FAILURE_MODE)"
 [[ "${baseline_failure_mode}" == "none" ]] || die "Baseline APP_FAILURE_MODE must be 'none'"
 
 for ((iteration=1; iteration<=ITERATIONS; iteration++)); do
+  ensure_iteration_is_new "rollback" "${iteration}"
   wait_until "healthy controller baseline before preparing rollback" controller_is_ready || \
     die "Controller baseline was not ready before iteration ${iteration}"
   wait_until "healthy Deployment baseline before preparing rollback" deployment_is_ready "${deployment}" || \
@@ -59,8 +60,13 @@ for ((iteration=1; iteration<=ITERATIONS; iteration++)); do
   }
   wait_until "broken release applied and at least one new Pod is not ready" broken_rollout_observed || \
     die "Broken release was not observable; rollback measurement cannot start"
+  wait_until "failed-release reconciliation is no longer running" controller_operation_is_idle || \
+    die "Controller was still processing the broken release; rollback measurement cannot start"
 
   begin_iteration "rollback" "${iteration}"
+  settle_before_measurement
+  broken_rollout_observed || die "Broken rollout disappeared before rollback measurement"
+  controller_operation_is_idle || die "Controller started another operation before rollback measurement"
   snapshot_cluster "before"
   capture_controller_baseline
   log "Rolling back broken commit ${bad_commit} by creating a Git revert"

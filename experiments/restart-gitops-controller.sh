@@ -101,6 +101,10 @@ for ((iteration=1; iteration<=ITERATIONS; iteration++)); do
   begin_iteration "restart_controller" "${iteration}"
   wait_until "selected controller Pod ready before restart" pod_is_ready "${old_pod}" || \
     die "Controller Pod ${old_pod} was not ready before iteration ${iteration}"
+  settle_before_measurement
+  wait_until "selected controller Pod remains ready after the pre-mutation delay" \
+    pod_is_ready "${old_pod}" || \
+    die "Controller Pod ${old_pod} did not remain ready before iteration ${iteration}"
   old_uid="$(controller_pod_uid "${old_pod}")"
   BASELINE_CONTROLLER_UIDS="$(controller_pod_records | awk -F '\t' 'NF >= 2 {printf "%s|", $2}')"
   [[ -n "${BASELINE_CONTROLLER_UIDS}" ]] || die "Cannot capture baseline controller Pod UIDs"

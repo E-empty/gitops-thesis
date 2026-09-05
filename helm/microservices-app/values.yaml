@@ -28,6 +28,7 @@ securityContext:
   readOnlyRootFilesystem: true
 
 terminationGracePeriodSeconds: 30
+progressDeadlineSeconds: 60
 
 services:
   gateway:

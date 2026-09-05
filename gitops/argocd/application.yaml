@@ -24,11 +24,9 @@ spec:
       prune: true
       selfHeal: true
     retry:
-      limit: 5
-      backoff:
-        duration: 5s
-        factor: 2
-        maxDuration: 1m
+      # Match Flux upgrade.remediation.retries=0. Failed-release recovery is
+      # initiated by the experiment's next Git revision, not an internal retry.
+      limit: 0
     syncOptions:
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground

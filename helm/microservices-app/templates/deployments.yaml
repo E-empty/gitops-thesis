@@ -8,6 +8,7 @@ metadata:
     {{- include "microservices-app.serviceLabels" (dict "root" $ "key" $key "service" $service) | nindent 4 }}
 spec:
   replicas: {{ $service.replicas }}
+  progressDeadlineSeconds: {{ $.Values.progressDeadlineSeconds }}
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate

@@ -26,6 +26,7 @@ kubeconfig*
 results/argocd/
 results/fluxcd/
 results/logs/
+results/*/
 analysis/output/
 analysis/tmp*/
 

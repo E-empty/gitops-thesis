@@ -37,6 +37,7 @@ done
 is_positive_integer "${DRIFT_REPLICAS}" || die "--drift-replicas must be a positive integer"
 require_commands kubectl python3 awk
 prepare_results
+verify_drift_profile
 
 deployment="$(resolve_deployment)"
 

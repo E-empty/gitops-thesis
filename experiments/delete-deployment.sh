@@ -24,6 +24,7 @@ while (($#)); do
 done
 require_commands kubectl python3 awk
 prepare_results
+verify_drift_profile
 
 for ((iteration=1; iteration<=ITERATIONS; iteration++)); do
   deployment="$(resolve_deployment)"

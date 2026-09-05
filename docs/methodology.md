@@ -10,7 +10,10 @@ Argo CD i Flux CD przy tej samej aplikacji i deklaracji Kubernetes.
 
 Jedną obserwacją jest pojedyncza iteracja scenariusza wykonana od potwierdzonego
 stanu bazowego do potwierdzonego recovery. Seria to 10 prób pilotażowych albo
-20–30 prób właściwych jednego scenariusza i jednego narzędzia.
+20–30 prób właściwych jednego scenariusza i jednego narzędzia. Są to pomiary
+powtarzane na tym samym środowisku, a nie bezwarunkowo niezależne obserwacje;
+kontrolowany profil usuwa znane źródła pamięci między iteracjami, a pozostałą
+autokorelację trzeba sprawdzić i opisać.
 
 ## Zalecany wariant izolacji
 
@@ -87,12 +90,26 @@ servera; wartość musi pozostać identyczna dla obu narzędzi.
 
 Flux jawnie używa `interval: 1m`, Helm drift detection oraz jitter `0%` ustawiany
 na source-controller i helm-controller. Argo CD ma ustawione
-`timeout.reconciliation: 60s` i jitter `0s`, a Application korzysta z
-automatycznej synchronizacji/self-heal. Okres pollingu Git jest więc jawnie
-wyrównany, chociaż watch zasobów i wewnętrzny przebieg korekty pozostają naturalną
-cechą narzędzia. Nie należy wywoływać `flux reconcile`, `argocd app sync` ani
-ręcznie annotować zasobów podczas pomiaru. Konkretne ustawienia i wersje trzeba
-zapisać przy wynikach.
+`timeout.reconciliation: 60s`, jitter `0s` i automatyczną synchronizację/self-heal.
+W kontrolowanym profilu Argo dodatkowo używa
+`controller.self.heal.backoff.timeout.seconds: "0"`, ponieważ domyślny stanowy
+backoff `2 × 3^n`, ograniczony do 300 s, przenosi historię wcześniejszych driftów
+do następnych obserwacji tej samej Application i rewizji. Application ma
+`retry.limit: 0`, tak jak Flux ma `upgrade.remediation.retries: 0`; nieudany
+release ma zostać naprawiony nową rewizją Git z eksperymentu, nie wewnętrznym
+retry kontrolera.
+
+Runner przed każdą mutacją odczekuje co najmniej 5 s oraz deterministyczne
+opóźnienie z okna 60 s. Sekwencja zależy od nazwy testu, numeru iteracji i
+`--delay-seed`, ale nie od badanego narzędzia, więc Argo i Flux dostają ten sam
+rozkład momentów mutacji względem okresowego reconcile. Dla krótkiego pilotażu
+można jawnie użyć `--settle-seconds 0 --phase-window 0`; nie należy tak wykonywać
+serii właściwej.
+
+Okres pollingu Git pozostaje wyrównany, natomiast event-driven watch Argo i
+okresowa detekcja driftu Flux pozostają badanymi cechami narzędzi. Nie należy
+wywoływać `flux reconcile`, `argocd app sync` ani ręcznie annotować zasobów podczas
+pomiaru. Konkretne ustawienia i wersje trzeba zapisać przy wynikach.
 
 Flux HelmRelease nie czeka wewnątrz akcji upgrade na readiness i nie ma
 automatycznej remediation upgrade. Jest to konieczna różnica techniczna: wspólny
@@ -106,10 +123,12 @@ Git, tak jak w Argo CD. Instalacja początkowa nadal czeka i ma ograniczone retr
 2. Sprawdzić, że drzewo Git jest czyste i kontroler ma stan Ready/Healthy.
 3. Wykonać smoke test wszystkich endpointów.
 4. Odczekać ustalony czas stabilizacji, np. 5 minut.
-5. Uruchomić scenariusz z jawnymi argumentami i przekierować także log terminala.
-6. Nie wznawiać serii po timeout bez zdiagnozowania i odtworzenia baseline.
-7. Po serii zapisać zdarzenia, logi kontrolera i metadane środowiska.
-8. Skopiować cały katalog `results` do niezmiennego archiwum.
+5. Utworzyć nowy katalog wyników dla serii; nie dopisywać pilotażu do danych
+   właściwych.
+6. Uruchomić scenariusz z jawnymi argumentami i przekierować także log terminala.
+7. Nie wznawiać serii po timeout bez zdiagnozowania i odtworzenia baseline.
+8. Po serii zapisać zdarzenia, logi kontrolera i metadane środowiska.
+9. Skopiować cały katalog wyników do niezmiennego archiwum.
 
 ## Analiza i raportowanie
 
@@ -137,6 +156,8 @@ i helm-controller.
   wariancję mimo wyłączenia losowego jittera interwałów;
 - jednowęzłowy Kind współdzieli zasoby z systemem hosta;
 - polling kwantyzuje czas detekcji;
+- kolejne pomiary na tym samym klastrze mogą być autokorelowane mimo
+  kontrolowanego okna opóźnienia;
 - nowe commity i webhooki mogą wpłynąć na sposób wykrycia zmiany;
 - restart klastra nie gwarantuje identycznego stanu zewnętrznego registry;
 - Metrics Server sam zużywa zasoby i nie powinien być obecny tylko w jednej

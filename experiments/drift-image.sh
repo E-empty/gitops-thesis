@@ -36,6 +36,7 @@ while (($#)); do
 done
 require_commands kubectl python3 awk
 prepare_results
+verify_drift_profile
 
 deployment="$(resolve_deployment)"
 container="$(deployment_field "${deployment}" '{.spec.template.spec.containers[0].name}')"

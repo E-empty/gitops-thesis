@@ -227,8 +227,9 @@ UI jest dostępne bez LoadBalancera:
 ./scripts/argocd-ui.sh
 ```
 
-Instalator wyrównuje okres pollingu Git do Flux: 60 sekund bez jitteru, po czym
-restartuje wymagane komponenty. Skrypt UI wyświetla komendę odczytu początkowego
+Instalator wyrównuje okres pollingu Git do Flux: 60 sekund bez jitteru, wyłącza
+stanowy self-heal backoff dla kontrolowanych serii i restartuje wymagane
+komponenty. Skrypt UI wyświetla komendę odczytu początkowego
 hasła i uruchamia HTTPS port-forward na `127.0.0.1:8081` (port 8080 zajmuje
 mapowanie Ingress klastra Kind). Więcej:
 [docs/argocd.md](docs/argocd.md).
@@ -253,32 +254,42 @@ HelmRelease ma włączoną korektę driftu, a źródło i release używają inte
 
 ## Uruchamianie eksperymentów
 
-Najpierw wykonaj próbę pilotażową z jedną iteracją. Potem zbierz 20–30 iteracji
-bez zmiany parametrów:
+Najpierw wykonaj próbę pilotażową z jedną iteracją w osobnym katalogu. Potem
+zbierz 20–30 iteracji bez zmiany parametrów. Domyślne opóźnienia przed mutacją są
+deterministyczne i identyczne dla obu narzędzi:
 
 ```bash
+PILOT_RESULTS="results/pilot-$(date -u +%Y%m%dT%H%M%SZ)"
+RUN_RESULTS="results/controlled-$(date -u +%Y%m%dT%H%M%SZ)"
+
 # drift deklarowanej skali 2 -> ręczne 5 -> automatyczne 2
-./experiments/drift-scale.sh --tool argocd --iterations 1
-./experiments/drift-scale.sh --tool argocd --iterations 30
+./experiments/drift-scale.sh --tool argocd --iterations 1 \
+  --settle-seconds 0 --phase-window 0 --results-dir "$PILOT_RESULTS"
+./experiments/drift-scale.sh --tool argocd --iterations 30 \
+  --results-dir "$RUN_RESULTS"
 
 # drift obrazu poza Git
-./experiments/drift-image.sh --tool argocd --iterations 30
+./experiments/drift-image.sh --tool argocd --iterations 30 \
+  --results-dir "$RUN_RESULTS"
 
 # usunięcie i odtworzenie Deploymentu
-./experiments/delete-deployment.sh --tool argocd --iterations 30
+./experiments/delete-deployment.sh --tool argocd --iterations 30 \
+  --results-dir "$RUN_RESULTS"
 
 # restart głównego kontrolera reconcile
-./experiments/restart-gitops-controller.sh --tool argocd --iterations 30
+./experiments/restart-gitops-controller.sh --tool argocd --iterations 30 \
+  --results-dir "$RUN_RESULTS"
 
-# idle nie ma triggera; sync/drift wymagają rzeczywistej operacji równoległej
-./experiments/resource-usage.sh --tool argocd --phase idle --iterations 30
-./experiments/resource-usage.sh --tool argocd --phase drift --iterations 30 \
-  --trigger-command './experiments/drift-scale.sh --tool argocd --iterations 1'
+# idle: próbki co 15 s; aktywne fazy z pojedynczym krótkim triggerem są tylko
+# eksploracyjne ze względu na rozdzielczość Metrics Servera
+./experiments/resource-usage.sh --tool argocd --phase idle --iterations 30 \
+  --sample-interval 15 --results-dir "$RUN_RESULTS"
 ```
 
 Zamień `argocd` na `fluxcd` po odtworzeniu środowiska. Wspólne opcje to
-`--namespace`, `--service`, `--timeout`, `--poll-interval`, `--results-dir`,
-`--gitops-resource` i `--context`. Każde wywołanie `kubectl` otrzymuje wskazany
+`--namespace`, `--service`, `--timeout`, `--poll-interval`, `--settle-seconds`,
+`--phase-window`, `--delay-seed`, `--results-dir`, `--gitops-resource` i
+`--context`. Każde wywołanie `kubectl` otrzymuje wskazany
 kontekst jawnie; skrypty nie przełączają globalnego bieżącego kontekstu.
 
 Scenariusze oparte na Git tworzą i wypychają commity. Wymagają czystego drzewa,

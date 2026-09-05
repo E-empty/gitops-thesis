@@ -39,9 +39,13 @@ NAMESPACE="${NAMESPACE:-}"
 SERVICE="${SERVICE:-gateway-service}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-300}"
 POLL_INTERVAL="${POLL_INTERVAL:-1}"
+SETTLE_SECONDS="${SETTLE_SECONDS:-5}"
+PHASE_WINDOW_SECONDS="${PHASE_WINDOW_SECONDS:-60}"
+DELAY_SEED="${DELAY_SEED:-20260905}"
 RESULTS_DIR="${RESULTS_DIR:-${REPO_ROOT}/results}"
 GITOPS_RESOURCE_NAME="${GITOPS_RESOURCE_NAME:-microservices-app}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-gitops-thesis}"
+ALLOW_ARGOCD_SELF_HEAL_BACKOFF="${ALLOW_ARGOCD_SELF_HEAL_BACKOFF:-false}"
 
 # Route every experiment command to the declared context without changing the
 # user's active kubeconfig context. Define the wrapper only when the real CLI is
@@ -76,9 +80,14 @@ common_options() {
   --service NAME         Service label to target (default: gateway-service)
   --timeout SECONDS      Maximum wait per phase (default: 300)
   --poll-interval SEC    Observation interval (default: 1)
+  --settle-seconds SEC   Minimum pre-mutation stabilization (default: 5)
+  --phase-window SEC     Deterministic extra delay window (default: 60)
+  --delay-seed N         Seed shared by both tools (default: 20260905)
   --results-dir PATH     Results root (default: <repository>/results)
   --gitops-resource NAME Application/HelmRelease name (default: microservices-app)
   --context NAME         kube-context to target (default: kind-gitops-thesis)
+  --allow-argocd-self-heal-backoff
+                         Permit native stateful backoff in drift tests
 EOF
 }
 
@@ -169,6 +178,21 @@ parse_common_args() {
         POLL_INTERVAL="$2"
         shift 2
         ;;
+      --settle-seconds)
+        (($# >= 2)) || die "--settle-seconds requires a value"
+        SETTLE_SECONDS="$2"
+        shift 2
+        ;;
+      --phase-window)
+        (($# >= 2)) || die "--phase-window requires a value"
+        PHASE_WINDOW_SECONDS="$2"
+        shift 2
+        ;;
+      --delay-seed)
+        (($# >= 2)) || die "--delay-seed requires a value"
+        DELAY_SEED="$2"
+        shift 2
+        ;;
       --results-dir)
         (($# >= 2)) || die "--results-dir requires a value"
         RESULTS_DIR="$2"
@@ -183,6 +207,10 @@ parse_common_args() {
         (($# >= 2)) || die "--context requires a value"
         KUBE_CONTEXT="$2"
         shift 2
+        ;;
+      --allow-argocd-self-heal-backoff)
+        ALLOW_ARGOCD_SELF_HEAL_BACKOFF=true
+        shift
         ;;
       -h|--help)
         COMMON_REMAINING_ARGS+=("$1")
@@ -205,6 +233,9 @@ parse_common_args() {
   is_positive_integer "${ITERATIONS}" || die "--iterations must be a positive integer"
   is_positive_integer "${TIMEOUT_SECONDS}" || die "--timeout must be a positive integer"
   is_nonnegative_number "${POLL_INTERVAL}" || die "--poll-interval must be a non-negative number"
+  is_nonnegative_number "${SETTLE_SECONDS}" || die "--settle-seconds must be a non-negative number"
+  is_nonnegative_number "${PHASE_WINDOW_SECONDS}" || die "--phase-window must be a non-negative number"
+  [[ "${DELAY_SEED}" =~ ^[0-9]+$ ]] || die "--delay-seed must be a non-negative integer"
   if [[ -z "${NAMESPACE}" ]]; then
     NAMESPACE="test-${TOOL}"
   fi
@@ -233,6 +264,34 @@ require_commands() {
 
 prepare_results() {
   mkdir -p "${RESULTS_DIR}/${TOOL}" "${RESULTS_DIR}/logs/${TOOL}"
+}
+
+ensure_iteration_is_new() {
+  local test_name="$1"
+  local iteration="$2"
+  local csv_file="${RESULTS_DIR}/${TOOL}/${test_name}.csv"
+  local header
+  [[ -s "${csv_file}" ]] || return 0
+  IFS= read -r header <"${csv_file}"
+  [[ "${header}" == 'tool,test,iteration,start_time,detection_time,recovery_time,total_seconds,status' ]] || \
+    die "Unexpected CSV schema in ${csv_file}; use a new --results-dir instead of appending"
+  if ! python3 - "${csv_file}" "${TOOL}" "${test_name}" "${iteration}" <<'PY'
+import csv
+import sys
+
+path, tool, test, iteration = sys.argv[1:]
+with open(path, encoding="utf-8", newline="") as handle:
+    duplicate = any(
+        row.get("tool") == tool
+        and row.get("test") == test
+        and row.get("iteration") == iteration
+        for row in csv.DictReader(handle)
+    )
+raise SystemExit(1 if duplicate else 0)
+PY
+  then
+    die "Result ${TOOL}/${test_name} iteration ${iteration} already exists in ${csv_file}; use a new --results-dir for a new series"
+  fi
 }
 
 csv_escape() {
@@ -281,6 +340,7 @@ begin_iteration() {
   local test_name="$1"
   local iteration="$2"
   local log_timestamp safe_timestamp
+  ensure_iteration_is_new "${test_name}" "${iteration}"
   log_timestamp="$(now_iso)"
   safe_timestamp="${log_timestamp//:/-}"
   CURRENT_LOG="${RESULTS_DIR}/logs/${TOOL}/${test_name}-${iteration}-${safe_timestamp}.log"
@@ -288,6 +348,31 @@ begin_iteration() {
   CURRENT_ITERATION="${iteration}"
   : >"${CURRENT_LOG}"
   log "Starting ${test_name}, iteration ${iteration}, tool=${TOOL}, namespace=${NAMESPACE}, service=${SERVICE}"
+}
+
+iteration_delay_seconds() {
+  local test_name="$1"
+  local iteration="$2"
+  python3 - "${DELAY_SEED}" "${test_name}" "${iteration}" \
+    "${SETTLE_SECONDS}" "${PHASE_WINDOW_SECONDS}" <<'PY'
+import hashlib
+import sys
+
+seed, test, iteration, minimum, window = sys.argv[1:]
+digest = hashlib.sha256(f"{seed}:{test}:{iteration}".encode()).digest()
+fraction = int.from_bytes(digest[:8], "big") / (2**64 - 1)
+delay = float(minimum) + fraction * float(window)
+print(f"{delay:.3f}")
+PY
+}
+
+settle_before_measurement() {
+  local test_name="${1:-${CURRENT_TEST_NAME}}"
+  local iteration="${2:-${CURRENT_ITERATION}}"
+  local delay
+  delay="$(iteration_delay_seconds "${test_name}" "${iteration}")"
+  log "Pre-mutation stabilization delay: ${delay}s (seed=${DELAY_SEED}, window=${PHASE_WINDOW_SECONDS}s)"
+  sleep "${delay}"
 }
 
 start_measurement() {
@@ -420,6 +505,21 @@ controller_is_ready() {
   fi
 }
 
+controller_operation_is_idle() {
+  if [[ "${TOOL}" == "argocd" ]]; then
+    local operation_phase
+    operation_phase="$(kubectl -n argocd get application.argoproj.io "${GITOPS_RESOURCE_NAME}" \
+      -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+    [[ "${operation_phase}" != "Running" && "${operation_phase}" != "Terminating" ]]
+  else
+    local reconciling
+    reconciling="$(kubectl -n flux-system get helmrelease.helm.toolkit.fluxcd.io "${GITOPS_RESOURCE_NAME}" \
+      -o jsonpath='{.status.conditions[?(@.type=="Reconciling")].status}' \
+      2>/dev/null || true)"
+    [[ "${reconciling}" != "True" ]]
+  fi
+}
+
 flux_drift_event_marker() {
   local events_json
   events_json="$(kubectl -n flux-system get events -o json 2>/dev/null)" || return 1
@@ -461,7 +561,23 @@ prepare_iteration_baseline() {
   local deployment="$1"
   wait_until "GitOps controller reports a stable ready state" controller_is_ready || return 1
   wait_until "target Deployment is fully ready before mutation" deployment_is_ready "${deployment}" || return 1
+  settle_before_measurement
+  wait_until "GitOps controller remains stable after the pre-mutation delay" controller_is_ready || return 1
+  wait_until "target Deployment remains ready after the pre-mutation delay" deployment_is_ready "${deployment}" || return 1
   capture_controller_baseline
+}
+
+verify_drift_profile() {
+  [[ "${TOOL}" == "argocd" ]] || return 0
+  local configured_backoff
+  configured_backoff="$(kubectl -n argocd get configmap argocd-cmd-params-cm \
+    -o jsonpath='{.data.controller\.self\.heal\.backoff\.timeout\.seconds}' \
+    2>/dev/null || true)"
+  # The key is optional in Argo CD and defaults to 2 seconds.
+  configured_backoff="${configured_backoff:-2}"
+  if [[ "${configured_backoff}" != "0" && "${ALLOW_ARGOCD_SELF_HEAL_BACKOFF}" != true ]]; then
+    die "Argo CD self-heal backoff is active (initial timeout=${configured_backoff}s). Reapply the controlled benchmark configuration or explicitly pass --allow-argocd-self-heal-backoff for a native backoff experiment"
+  fi
 }
 
 controller_source_reaction_observed() {
@@ -579,8 +695,7 @@ finish_failure() {
 }
 
 pause_between_iterations() {
-  if [[ "$1" -lt "${ITERATIONS}" ]]; then
-    log "Waiting ${POLL_INTERVAL}s before the next iteration"
-    sleep "${POLL_INTERVAL}"
-  fi
+  # Kept for scenario compatibility. Stabilization now happens immediately
+  # before each mutation and is intentionally independent of API polling.
+  :
 }

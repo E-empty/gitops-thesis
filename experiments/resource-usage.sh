@@ -14,7 +14,7 @@ Collects controller Pod CPU and memory samples from Metrics Server.
 Scenario options:
   --phase idle|sync|drift       Measurement phase label (default: idle)
   --controller-namespace NAME  Override argocd/flux-system
-  --sample-interval SECONDS    Delay between samples (default: 5)
+  --sample-interval SECONDS    Delay between samples (default: 15)
   --trigger-command COMMAND    Command run concurrently for sync/drift phases
 
 For this scenario --iterations is the number of metric samples.
@@ -26,7 +26,7 @@ EOF
 
 PHASE="idle"
 CONTROLLER_NAMESPACE=""
-SAMPLE_INTERVAL=5
+SAMPLE_INTERVAL=15
 TRIGGER_COMMAND=""
 TRIGGER_PID=""
 parse_common_args "$@"
@@ -79,6 +79,25 @@ is_dns_label "${CONTROLLER_NAMESPACE}" || die "--controller-namespace must be a 
 csv_file="${RESULTS_DIR}/${TOOL}/resource_usage.csv"
 if [[ ! -s "${csv_file}" ]]; then
   printf '%s\n' 'tool,phase,iteration,timestamp,namespace,pod,cpu_raw,memory_raw,cpu_millicores,memory_mib,status' >"${csv_file}"
+fi
+IFS= read -r resource_header <"${csv_file}"
+[[ "${resource_header}" == 'tool,phase,iteration,timestamp,namespace,pod,cpu_raw,memory_raw,cpu_millicores,memory_mib,status' ]] || \
+  die "Unexpected CSV schema in ${csv_file}; use a new --results-dir instead of appending"
+
+if ! python3 - "${csv_file}" "${TOOL}" "${PHASE}" <<'PY'
+import csv
+import sys
+
+path, tool, phase = sys.argv[1:]
+with open(path, encoding="utf-8", newline="") as handle:
+    duplicate_series = any(
+        row.get("tool") == tool and row.get("phase") == phase
+        for row in csv.DictReader(handle)
+    )
+raise SystemExit(1 if duplicate_series else 0)
+PY
+then
+  die "Resource series ${TOOL}/${PHASE} already exists in ${csv_file}; use a new --results-dir for a new series"
 fi
 RESOURCE_TERMINAL_STATUS_RECORDED=false
 CURRENT_LOG="${RESULTS_DIR}/logs/${TOOL}/resource-usage-${PHASE}-$(now_iso | tr ':' '-').log"

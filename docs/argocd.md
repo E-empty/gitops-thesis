@@ -12,7 +12,8 @@ Polityka synchronizacji zawiera:
 - `prune: true`;
 - `selfHeal: true`;
 - automatyczne utworzenie namespace;
-- retry z ograniczonym exponential backoff;
+- brak automatycznego retry nieudanego syncu (`retry.limit: 0`), zgodnie z
+  `upgrade.remediation.retries: 0` w badanym HelmRelease Flux;
 - usuwanie z propagacją foreground i prune na końcu.
 
 ## Instalacja
@@ -36,10 +37,19 @@ jednocześnie `Synced` i `Healthy` (domyślny timeout: 10 minut). Bez parametró
 repozytorium instaluje tylko kontroler. Kontekst można wskazać przez `--context`
 lub `KUBE_CONTEXT`; bez nich używany jest wyłącznie `kind-gitops-thesis`.
 
-ConfigMap ustawia `timeout.reconciliation: 60s` oraz jitter `0s`, a instalator
-restartuje application-controller i repo-server zgodnie z wymaganiem Argo CD.
-Daje to taki sam jawny okres pollingu Git jak minutowe interwały Flux. Watch
-zasobów i wewnętrzny przebieg self-heal nadal są naturalną cechą Argo CD.
+ConfigMap ustawia `timeout.reconciliation: 60s`, jitter `0s` oraz
+`controller.self.heal.backoff.timeout.seconds: "0"`. Ostatnia wartość wyłącza
+stanowy exponential backoff między kolejnymi self-heal tej samej rewizji, aby
+iteracja N nie dziedziczyła opóźnienia po iteracji N-1. Instalator restartuje
+application-controller i repo-server. Watch zasobów Argo CD pozostaje aktywny i
+jest naturalną cechą narzędzia; wyłączony jest wyłącznie mechanizm naruszający
+niezależność powtarzanych prób.
+
+Domyślne zachowanie Argo CD należy mierzyć w osobnej serii „native”. Po usunięciu
+klucza `controller.self.heal.backoff.timeout.seconds`, restarcie
+application-controllera i przekazaniu runnerowi
+`--allow-argocd-self-heal-backoff` seria pokazuje narastanie `2, 6, 18, 54, 162,
+300 s`. Nie wolno łączyć jej statystycznie z profilem kontrolowanym.
 Repozytorium prywatne wymaga osobnej deklaratywnej konfiguracji credentiali w
 Argo CD; token nie może znaleźć się w tym repozytorium.
 

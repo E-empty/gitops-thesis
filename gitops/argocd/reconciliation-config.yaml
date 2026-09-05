@@ -11,3 +11,17 @@ data:
   # random jitter so repeated measurements have a declared polling boundary.
   timeout.reconciliation: 60s
   timeout.reconciliation.jitter: 0s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cmd-params-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Controlled benchmark profile: repeated out-of-band drift observations must
+  # not inherit a growing delay from an earlier iteration. Native backoff is
+  # measured separately and can be restored by removing this key.
+  controller.self.heal.backoff.timeout.seconds: "0"

@@ -14,15 +14,25 @@ następujące opcje:
 | `--service` | `gateway-service` | cel wybierany po stabilnej etykiecie |
 | `--timeout` | 300 | limit każdej fazy oczekiwania w sekundach |
 | `--poll-interval` | 1 | częstotliwość obserwacji w sekundach |
+| `--settle-seconds` | 5 | minimalna stabilizacja przed mutacją |
+| `--phase-window` | 60 | deterministyczne rozłożenie mutacji w oknie reconcile |
+| `--delay-seed` | 20260905 | seed identycznej sekwencji opóźnień obu narzędzi |
 | `--results-dir` | `results` | katalog danych surowych |
 | `--gitops-resource` | `microservices-app` | nazwa Application/HelmRelease |
 | `--context` | `kind-gitops-thesis` | jawnie wybrany kube-context |
+
+Runner odrzuca ponowne zapisanie tego samego numeru iteracji danego testu lub
+tej samej fazy zasobowej. Pilot i każda seria właściwa muszą używać osobnych
+`--results-dir`; zapobiega to cichemu połączeniu starych i nowych obserwacji.
 
 Scenariusze reconcile zapisują przed i po iteracji listę zasobów, YAML
 Deploymentów, zdarzenia oraz status kontrolera. Restart kontrolera i pomiar
 zasobów zapisują wyspecjalizowane surowe logi. Błąd lub timeout scenariusza
 reconcile także tworzy wiersz CSV i snapshot diagnostyczny; skrypt kończy serię
 niezerowym kodem, aby kolejne pomiary nie były wykonywane ze znanego złego stanu.
+Trzy scenariusze driftu dodatkowo sprawdzają, czy Argo ma wyłączony stanowy
+self-heal backoff. Flaga `--allow-argocd-self-heal-backoff` służy wyłącznie do
+osobnej serii badającej zachowanie natywne.
 
 ## Definicje znaczników czasu
 
@@ -175,11 +185,8 @@ Ingressu ani port-forward. Sprawdza JSON zwracany przez `/health`, `/ready` i
 Po instalacji Metrics Servera:
 
 ```bash
-./experiments/resource-usage.sh --tool argocd --phase idle --iterations 30
-./experiments/resource-usage.sh --tool argocd --phase sync --iterations 30 \
-  --trigger-command './experiments/change-config.sh --tool argocd --iterations 1'
-./experiments/resource-usage.sh --tool argocd --phase drift --iterations 30 \
-  --trigger-command './experiments/drift-scale.sh --tool argocd --iterations 1'
+./experiments/resource-usage.sh --tool argocd --phase idle --iterations 30 \
+  --sample-interval 15
 ```
 
 Dla `sync` i `drift` skrypt wymaga `--trigger-command` i uruchamia go równolegle,
@@ -188,6 +195,13 @@ jego niezerowy kod zatrzymuje serię, ale zebrane próbki pozostają na dysku. C
 zawiera raw Kubernetes quantity oraz wartości przeliczone na millicores i MiB dla
 każdego poda kontrolera. Brak metryki jest zachowany jako `metrics_unavailable`,
 a nie zamieniany na zero.
+
+Metrics Server agreguje dane z dużo mniejszą rozdzielczością niż sekundowe
+operacje Argo CD. Dlatego pojedynczy trigger nie jest wiarygodnym pomiarem CPU
+„podczas driftu”: większość próbek będzie już idle. Do wniosków ilościowych
+należy używać przede wszystkim stabilnego footprintu idle (próbki co 15 s).
+Fazy aktywne wymagają długotrwałego, z góry zdefiniowanego obciążenia albo
+Prometheusa/cAdvisora i powinny być raportowane oddzielnie jako eksploracyjne.
 
 ## Analiza
 
