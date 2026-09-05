@@ -37,7 +37,7 @@ services:
     replicas: 2
     image:
       repository: "ghcr.io/e-empty/gateway-service"
-      tag: "da8997409d8ebbba7a94f1eaad3dfdd192c7eb80"
+      tag: "6bf9df76eff08a02c97bec9c254232c5a527dcee"
       pullPolicy: IfNotPresent
     containerPort: 8000
     service:
@@ -45,7 +45,7 @@ services:
       port: 80
       annotations: {}
     env:
-      APP_VERSION: "1.1.0"
+      APP_VERSION: "1.0.0"
       APP_FAILURE_MODE: "none"
       EXPERIMENT_CONFIG: "baseline"
     resources:
