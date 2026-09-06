@@ -46,7 +46,7 @@ services:
       annotations: {}
     env:
       APP_VERSION: "1.0.0"
-      APP_FAILURE_MODE: "readiness"
+      APP_FAILURE_MODE: "none"
       EXPERIMENT_CONFIG: "baseline"
     resources:
       requests:
