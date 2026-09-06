@@ -47,7 +47,7 @@ services:
     env:
       APP_VERSION: "1.0.0"
       APP_FAILURE_MODE: "none"
-      EXPERIMENT_CONFIG: "baseline"
+      EXPERIMENT_CONFIG: "changed-fluxcd-8-1788712779475"
     resources:
       requests:
         cpu: 50m
